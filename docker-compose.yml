@@ -1,41 +1,9 @@
 version: "3.8"
 
 services:
-  playwright-tests:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  tests:
+    build: .
     container_name: trendvision-tests
-    environment:
-      - PYTHONUNBUFFERED=1
     volumes:
-      - ./test-results:/app/test-results
       - ./reports:/app/reports
-    command: >
-      pytest tests/ -v --tb=short
-      --browser=chromium
-      --output=test-results/
-      --html=reports/report.html
-      --self-contained-html
-    shm_size: '2gb'
-
-  # Запуск в headed режиме (для отладки, нужен X server)
-  playwright-headed:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: trendvision-tests-headed
-    environment:
-      - DISPLAY=${DISPLAY}
-      - PYTHONUNBUFFERED=1
-    volumes:
-      - /tmp/.X11-unix:/tmp/.X11-unix
-      - ./test-results:/app/test-results
-    command: >
-      pytest tests/ -v --tb=short
-      --browser=chromium
-      --headed
-      --slow-mo=500
-    shm_size: '2gb'
-    profiles:
-      - headed
+    command: python -m pytest tests/ -v -s

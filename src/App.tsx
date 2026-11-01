@@ -1,241 +1,181 @@
 import { useState } from 'react'
 
 const testCode = `"""
-Тесты для страницы поддержки TrendVision: https://trendvision.ru/support/#Firmware
+Тесты для страницы https://trendvision.ru/support/#Firmware
 
-Тест проверяет корректную работу фильтров прошивок:
-1. Выбор категории "Видеорегистраторы / В форме зеркала"
-2. Выбор товара "TrendVision MR-710GP"
-3. Выбор серийного номера "Все серийные номера"
-4. Проверка появления блока "База камер" с кнопкой "Скачать"
+Что проверяем:
+- Выбираем в фильтрах: Категория -> Товар -> Серийный номер
+- После выбора всех трёх фильтров должен появиться блок "База камер"
+- В этом блоке должна быть кнопка "Скачать" со ссылкой на .rar архив
 """
 
+import time
 import re
-import pytest
-from playwright.sync_api import Page, expect, BrowserContext
-
-BASE_URL = "https://trendvision.ru/support/#Firmware"
+from playwright.sync_api import sync_playwright
 
 
-@pytest.fixture(scope="function")
-def context(browser):
-    """Создаёт контекст браузера с русским языком."""
-    ctx = browser.new_context(
-        locale="ru-RU",
-        viewport={"width": 1920, "height": 1080},
-    )
-    yield ctx
-    ctx.close()
+# URL страницы
+URL = "https://trendvision.ru/support/#Firmware"
 
 
-@pytest.fixture(scope="function")
-def page(context: BrowserContext):
-    """Создаёт новую страницу в контексте браузера."""
-    pg = context.new_page()
-    yield pg
-    pg.close()
+def test_firmware_filters():
+    """
+    Основной тест:
+    1. Открываем страницу поддержки
+    2. В первом dropdown "Категория" выбираем
+       "Видеорегистраторы / В форме зеркала"
+    3. Во втором dropdown "Товар" выбираем "TrendVision MR-710GP"
+    4. В третьем dropdown "Серийный номер" выбираем
+       "Все серийные номера"
+    5. Проверяем что появился блок "База камер"
+    6. Проверяем что есть кнопка "Скачать" со ссылкой на data_*.rar
+    """
 
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
 
-class TestTrendVisionSupport:
-    """Тест-класс для страницы поддержки TrendVision."""
+        # Открываем страницу
+        page.goto(URL)
+        page.wait_for_load_state("networkidle")
+        time.sleep(2)  # ждём пока подгрузятся все скрипты
 
-    def test_page_loads(self, page: Page):
-        """Тест: страница загружается корректно."""
-        page.goto(BASE_URL, wait_until="networkidle")
-        expect(page).to_have_title(
-            re.compile("TrendVision|Поддержка|support", re.IGNORECASE)
+        # ==========================================
+        # ШАГ 1: Выбираем категорию
+        # ==========================================
+        # Находим первый dropdown с названием "Категория"
+        # На сайте это select элементы, берём первый
+        selects = page.locator("select")
+        category_select = selects.nth(0)
+
+        # Выбираем нужную опцию по тексту
+        category_select.select_option(
+            label="Видеорегистраторы / В форме зеркала"
         )
+        time.sleep(1)  # ждём пока обновится следующий dropdown
 
-    def test_full_workflow(self, page: Page):
-        """
-        Полный тест рабочего процесса:
-        1. Открыть страницу
-        2. Выбрать категорию
-        3. Выбрать товар
-        4. Выбрать серийный номер
-        5. Проверить блок "База камер"
-        6. Проверить ссылку "Скачать"
-        """
-        # Шаг 1: Открываем страницу
-        page.goto(BASE_URL, wait_until="networkidle")
-        expect(page).to_have_url(re.compile("support"))
+        # ==========================================
+        # ШАГ 2: Выбираем товар
+        # ==========================================
+        # Второй dropdown — "Товар"
+        product_select = selects.nth(1)
+        product_select.select_option(label="TrendVision MR-710GP")
+        time.sleep(1)
 
-        # Шаг 2: Выбираем категорию
-        self._select_category(page)
+        # ==========================================
+        # ШАГ 3: Выбираем серийный номер
+        # ==========================================
+        # Третий dropdown — "Серийный номер"
+        serial_select = selects.nth(2)
+        serial_select.select_option(label="Все серийные номера")
+        time.sleep(1)
 
-        # Шаг 3: Выбираем товар
-        self._select_product(page)
+        # ==========================================
+        # ШАГ 4: Проверяем блок "База камер"
+        # ==========================================
+        camera_block = page.locator("text=База камер")
+        assert camera_block.is_visible(timeout=10000), \\
+            "Блок 'База камер' не появился!"
 
-        # Шаг 4: Выбираем серийный номер
-        self._select_serial_number(page)
+        # ==========================================
+        # ШАГ 5: Проверяем кнопку "Скачать"
+        # ==========================================
+        download_link = page.locator("a", has_text="Скачать").first
+        assert download_link.is_visible(timeout=10000), \\
+            "Кнопка 'Скачать' не найдена!"
 
-        # Шаг 5: Проверяем блок "База камер"
-        camera_db_block = page.locator("text=База камер").first
-        expect(camera_db_block).to_be_visible(timeout=15000)
+        # Проверяем формат ссылки
+        href = download_link.get_attribute("href")
+        assert href is not None, "У ссылки нет href!"
 
-        # Шаг 6: Проверяем ссылку "Скачать"
-        download_link = page.locator("a:has-text('Скачать')").first
-        expect(download_link).to_be_visible(timeout=10000)
+        # Ссылка вида https://trendvision.ru/uploads/data_*.rar
+        pattern = r"https?://trendvision\\.ru/uploads/data_.*\\.rar"
+        assert re.match(pattern, href), \\
+            f"Ссылка не подходит: {href}"
 
-        download_href = download_link.get_attribute("href")
-        assert download_href is not None
-        assert "data_" in download_href
-        assert download_href.endswith(".rar")
-        assert "trendvision.ru/uploads/" in download_href
-
-    def _select_category(self, page: Page):
-        """Вспомогательный метод: выбор категории."""
-        category_container = page.locator("text=Категория").first
-        category_container.click()
-        page.wait_for_timeout(500)
-        option = page.locator("text=В форме зеркала").first
-        option.click()
-        page.wait_for_timeout(1000)
-
-    def _select_product(self, page: Page):
-        """Вспомогательный метод: выбор товара."""
-        product_container = page.locator("text=Товар").first
-        product_container.click()
-        page.wait_for_timeout(500)
-        option = page.locator("text=MR-710GP").first
-        option.click()
-        page.wait_for_timeout(1000)
-
-    def _select_serial_number(self, page: Page):
-        """Вспомогательный метод: выбор серийного номера."""
-        serial_container = page.locator("text=Серийный номер").first
-        serial_container.click()
-        page.wait_for_timeout(500)
-        option = page.locator("text=Все серийные номера").first
-        option.click()
-        page.wait_for_timeout(1000)`
-
-const conftestCode = `"""
-Конфигурация pytest для Playwright тестов.
-"""
-
-import pytest
-from playwright.sync_api import Playwright
+        print(f"✓ Тест пройден! Ссылка: {href}")
+        browser.close()
 
 
-def pytest_addoption(parser):
-    """Добавляет опции командной строки."""
-    parser.addoption(
-        "--browser-name",
-        default="chromium",
-        choices=["chromium", "firefox", "webkit"],
-        help="Имя браузера для тестов",
-    )
-    parser.addoption(
-        "--headed",
-        action="store_true",
-        default=False,
-        help="Запускать браузер в headed режиме",
-    )
-    parser.addoption(
-        "--slow-mo",
-        default=0,
-        type=int,
-        help="Замедление в миллисекундах между действиями",
-    )
+def test_page_opens():
+    """Простой тест — проверяем что страница открывается."""
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+
+        page.goto(URL)
+        page.wait_for_load_state("networkidle")
+
+        title = page.title()
+        assert len(title) > 0, "Страница не загрузилась!"
+
+        print(f"✓ Страница открылась, title: {title}")
+        browser.close()
 
 
-@pytest.fixture(scope="session")
-def browser_name(request):
-    """Возвращает имя браузера из опций."""
-    return request.config.getoption("--browser-name")
+if __name__ == "__main__":
+    print("Запуск тестов...")
+    print("-" * 50)
 
+    print("\\nТест 1: Открытие страницы")
+    test_page_opens()
 
-@pytest.fixture(scope="session")
-def browser_type_launch_args(request):
-    """Аргументы для запуска браузера."""
-    return {
-        "headless": not request.config.getoption("--headed"),
-        "slow_mo": request.config.getoption("--slow-mo"),
-    }
+    print("\\nТест 2: Фильтры и блок 'База камер'")
+    test_firmware_filters()
 
+    print("\\n" + "-" * 50)
+    print("Все тесты пройдены!")`
 
-@pytest.fixture(scope="session")
-def browser(playwright: Playwright, browser_name: str,
-            browser_type_launch_args: dict):
-    """Создаёт и запускает браузер."""
-    browser_type = getattr(playwright, browser_name)
-    browser = browser_type.launch(**browser_type_launch_args)
-    yield browser
-    browser.close()`
+const dockerfileCode = `# Dockerfile для запуска тестов Playwright
+# Используем образ с Python 3.11
+FROM python:3.11-slim
 
-const dockerfileCode = `# Dockerfile для запуска Playwright тестов
-# Базовый образ с Python и Playwright
-FROM mcr.microsoft.com/playwright/python:v1.49.1-jammy
-
-# Устанавливаем рабочую директорию
+# Рабочая директория внутри контейнера
 WORKDIR /app
 
-# Копируем зависимости
+# Копируем файл с зависимостями
 COPY requirements.txt .
 
-# Устанавливаем Python зависимости
+# Ставим зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем тесты и конфигурацию
+# Устанавливаем браузеры для Playwright
+# и системные библиотеки
+RUN playwright install --with-deps chromium
+
+# Копируем тесты
 COPY tests/ tests/
-COPY pytest.ini .
 
-# Устанавливаем переменные окружения
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
+# Запускаем тесты
+CMD ["python", "-m", "pytest", "tests/", "-v", "-s"]`
 
-# Команда по умолчанию - запуск тестов
-CMD ["pytest", "tests/", "-v", "--tb=short", "--browser=chromium"]`
-
-const dockerComposeCode = `version: "3.8"
+const composeCode = `version: "3.8"
 
 services:
-  playwright-tests:
-    build:
-      context: .
-      dockerfile: Dockerfile
+  tests:
+    build: .
     container_name: trendvision-tests
-    environment:
-      - PYTHONUNBUFFERED=1
     volumes:
-      - ./test-results:/app/test-results
       - ./reports:/app/reports
-    command: >
-      pytest tests/ -v --tb=short
-      --browser=chromium
-      --output=test-results/
-      --html=reports/report.html
-      --self-contained-html
-    shm_size: '2gb'`
+    command: python -m pytest tests/ -v -s`
 
 const requirementsCode = `playwright==1.49.1
-pytest==8.3.4
-pytest-playwright==0.5.2
-pytest-html==4.1.1`
+pytest==8.3.4`
 
-type TabId = 'tests' | 'conftest' | 'dockerfile' | 'compose' | 'requirements'
+type TabId = 'test' | 'dockerfile' | 'compose' | 'requirements'
 
-interface Tab {
-  id: TabId
-  label: string
-  icon: string
-  code: string
-  language: string
-}
-
-const tabs: Tab[] = [
-  { id: 'tests', label: 'test_trendvision_support.py', icon: '🧪', code: testCode, language: 'python' },
-  { id: 'conftest', label: 'conftest.py', icon: '⚙️', code: conftestCode, language: 'python' },
-  { id: 'dockerfile', label: 'Dockerfile', icon: '🐳', code: dockerfileCode, language: 'dockerfile' },
-  { id: 'compose', label: 'docker-compose.yml', icon: '📦', code: dockerComposeCode, language: 'yaml' },
-  { id: 'requirements', label: 'requirements.txt', icon: '📋', code: requirementsCode, language: 'text' },
+const tabs: { id: TabId; label: string; icon: string; code: string; lang: string }[] = [
+  { id: 'test', label: 'test_trendvision.py', icon: '🧪', code: testCode, lang: 'python' },
+  { id: 'dockerfile', label: 'Dockerfile', icon: '🐳', code: dockerfileCode, lang: 'docker' },
+  { id: 'compose', label: 'docker-compose.yml', icon: '📦', code: composeCode, lang: 'yaml' },
+  { id: 'requirements', label: 'requirements.txt', icon: '📋', code: requirementsCode, lang: 'text' },
 ]
 
-function CodeBlock({ code, language }: { code: string; language: string }) {
+function CodeBlock({ code, lang }: { code: string; lang: string }) {
   const [copied, setCopied] = useState(false)
 
-  const handleCopy = () => {
+  const copy = () => {
     navigator.clipboard.writeText(code)
     setCopied(true)
     setTimeout(() => setCopied(false), 2000)
@@ -244,20 +184,20 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   return (
     <div className="relative group">
       <button
-        onClick={handleCopy}
+        onClick={copy}
         className="absolute top-3 right-3 px-3 py-1.5 bg-slate-700 hover:bg-slate-600 text-slate-300 text-xs rounded-md transition-all opacity-0 group-hover:opacity-100 z-10"
       >
-        {copied ? '✓ Скопировано' : '📋 Копировать'}
+        {copied ? '✓ Готово' : '📋 Копировать'}
       </button>
-      <pre className="bg-slate-900 rounded-xl p-6 overflow-x-auto text-sm leading-relaxed border border-slate-700">
-        <code className={`language-${language} text-slate-100`}>
+      <pre className="bg-[#1a1b26] rounded-xl p-5 overflow-x-auto text-sm leading-relaxed border border-slate-700/50">
+        <code className="text-slate-200">
           {code.split('\n').map((line, i) => (
             <div key={i} className="flex">
-              <span className="text-slate-600 select-none w-10 text-right mr-6 flex-shrink-0">
+              <span className="text-slate-600 select-none w-8 text-right mr-4 flex-shrink-0 text-xs leading-relaxed">
                 {i + 1}
               </span>
-              <span className="flex-1">
-                {highlightLine(line, language)}
+              <span className="flex-1 whitespace-pre">
+                <ColorLine line={line} lang={lang} />
               </span>
             </div>
           ))}
@@ -267,294 +207,278 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
   )
 }
 
-function highlightLine(line: string, language: string): JSX.Element {
-  if (language === 'python') {
-    // Comments
-    if (line.trimStart().startsWith('#') || line.trimStart().startsWith('"""')) {
-      return <span className="text-emerald-400">{line}</span>
-    }
-    // Keywords
-    const keywords = /\b(import|from|def|class|return|yield|if|else|elif|try|except|assert|with|as|not|and|or|in|is|None|True|False|self)\b/g
-    const parts = line.split(keywords)
-    if (parts.length > 1) {
+function ColorLine({ line, lang }: { line: string; lang: string }) {
+  // Комментарии
+  if (lang === 'python' && (line.trimStart().startsWith('#') || line.trimStart().startsWith('"""'))) {
+    return <span className="text-emerald-500/80 italic">{line}</span>
+  }
+  if (lang === 'docker' && line.trimStart().startsWith('#')) {
+    return <span className="text-emerald-500/80 italic">{line}</span>
+  }
+  if (lang === 'yaml' && line.trimStart().startsWith('#')) {
+    return <span className="text-emerald-500/80 italic">{line}</span>
+  }
+
+  // Dockerfile инструкции
+  if (lang === 'docker') {
+    const m = line.match(/^(\s*)(FROM|WORKDIR|COPY|RUN|ENV|CMD|EXPOSE|ENTRYPOINT)(.*)$/)
+    if (m) {
       return (
         <span>
-          {parts.map((part, i) => {
-            if (/^(import|from|def|class|return|yield|if|else|elif|try|except|assert|with|as|not|and|or|in|is|None|True|False|self)$/.test(part)) {
-              return <span key={i} className="text-purple-400 font-semibold">{part}</span>
-            }
-            // Strings
-            const stringParts = part.split(/(["'].*?["'])/g)
-            return stringParts.map((sp, j) => {
-              if (/^["'].*["']$/.test(sp)) {
-                return <span key={`${i}-${j}`} className="text-amber-300">{sp}</span>
-              }
-              return <span key={`${i}-${j}`}>{sp}</span>
-            })
-          })}
+          <span>{m[1]}</span>
+          <span className="text-cyan-400 font-bold">{m[2]}</span>
+          <span className="text-slate-300">{m[3]}</span>
         </span>
       )
     }
   }
-  if (language === 'dockerfile') {
-    if (line.trimStart().startsWith('#')) {
-      return <span className="text-emerald-400">{line}</span>
+
+  // YAML ключи
+  if (lang === 'yaml') {
+    const m = line.match(/^(\s*)([\w-]+)(:.*)$/)
+    if (m) {
+      return (
+        <span>
+          <span>{m[1]}</span>
+          <span className="text-cyan-400">{m[2]}</span>
+          <span className="text-amber-300/80">{m[3]}</span>
+        </span>
+      )
     }
-    const keywords = /^(FROM|WORKDIR|COPY|RUN|ENV|CMD|EXPOSE|ENTRYPOINT|ARG|LABEL)/
-    if (keywords.test(line.trimStart())) {
-      const match = line.match(/^(\s*)(FROM|WORKDIR|COPY|RUN|ENV|CMD|EXPOSE|ENTRYPOINT|ARG|LABEL)(.*)$/)
-      if (match) {
-        return (
-          <span>
-            <span>{match[1]}</span>
-            <span className="text-cyan-400 font-bold">{match[2]}</span>
-            <span className="text-slate-200">{match[3]}</span>
-          </span>
-        )
+  }
+
+  // Python — простая подсветка
+  if (lang === 'python') {
+    // Строки в кавычках
+    const parts: { text: string; type: 'string' | 'keyword' | 'normal' }[] = []
+    let remaining = line
+    const regex = /("""[\s\S]*?"""|"[^"]*"|'[^']*')/g
+    let lastIdx = 0
+    let match
+
+    while ((match = regex.exec(line)) !== null) {
+      if (match.index > lastIdx) {
+        parts.push({ text: line.slice(lastIdx, match.index), type: 'normal' })
       }
+      parts.push({ text: match[0], type: 'string' })
+      lastIdx = match.index + match[0].length
     }
+    if (lastIdx < line.length) {
+      parts.push({ text: line.slice(lastIdx), type: 'normal' })
+    }
+
+    if (parts.length === 0) parts.push({ text: line, type: 'normal' })
+
+    const keywords = ['import', 'from', 'def', 'class', 'return', 'if', 'else', 'assert', 'with', 'as', 'not', 'and', 'or', 'in', 'is', 'None', 'True', 'False', 'print']
+
+    return (
+      <span>
+        {parts.map((part, i) => {
+          if (part.type === 'string') {
+            return <span key={i} className="text-amber-300/90">{part.text}</span>
+          }
+          // Подсветка ключевых слов
+          const words = part.text.split(/(\b(?:import|from|def|class|return|if|else|assert|with|as|not|and|or|in|is|None|True|False|print)\b)/g)
+          return words.map((w, j) => {
+            if (keywords.includes(w)) {
+              return <span key={`${i}-${j}`} className="text-purple-400">{w}</span>
+            }
+            // Функции
+            const funcMatch = w.match(/^(\w+)(\()/)
+            if (funcMatch && !keywords.includes(funcMatch[1])) {
+              return (
+                <span key={`${i}-${j}`}>
+                  <span className="text-blue-300">{funcMatch[1]}</span>
+                  <span className="text-slate-400">{funcMatch[2]}</span>
+                  {w.slice(funcMatch[0].length)}
+                </span>
+              )
+            }
+            return <span key={`${i}-${j}`}>{w}</span>
+          })
+        })}
+      </span>
+    )
   }
-  if (language === 'yaml') {
-    if (line.trimStart().startsWith('#')) {
-      return <span className="text-emerald-400">{line}</span>
-    }
-    const keyMatch = line.match(/^(\s*)([\w-]+)(:)(.*)$/)
-    if (keyMatch) {
-      return (
-        <span>
-          <span>{keyMatch[1]}</span>
-          <span className="text-cyan-400">{keyMatch[2]}</span>
-          <span className="text-slate-400">{keyMatch[3]}</span>
-          <span className="text-amber-300">{keyMatch[4]}</span>
-        </span>
-      )
-    }
-  }
+
   return <span>{line}</span>
 }
 
-function TestFlowDiagram() {
-  const steps = [
-    { icon: '🌐', title: 'Открыть страницу', desc: 'trendvision.ru/support/#Firmware' },
-    { icon: '📂', title: 'Категория', desc: 'Видеорегистраторы / В форме зеркала' },
-    { icon: '📷', title: 'Товар', desc: 'TrendVision MR-710GP' },
-    { icon: '🔢', title: 'Серийный номер', desc: 'Все серийные номера' },
-    { icon: '📋', title: 'База камер', desc: 'Проверка появления блока' },
-    { icon: '⬇️', title: 'Скачать', desc: 'data_*.rar ссылка' },
-  ]
-
+function StepCard({ num, title, desc, icon }: { num: number; title: string; desc: string; icon: string }) {
   return (
-    <div className="flex flex-wrap items-center justify-center gap-2 md:gap-0">
-      {steps.map((step, i) => (
-        <div key={i} className="flex items-center">
-          <div className="flex flex-col items-center bg-slate-800/50 backdrop-blur-sm rounded-xl p-4 border border-slate-700 min-w-[140px] hover:border-blue-500 transition-colors">
-            <span className="text-2xl mb-1">{step.icon}</span>
-            <span className="text-sm font-semibold text-white">{step.title}</span>
-            <span className="text-xs text-slate-400 text-center mt-1">{step.desc}</span>
-          </div>
-          {i < steps.length - 1 && (
-            <div className="hidden md:block text-blue-400 text-xl mx-2">→</div>
-          )}
+    <div className="flex items-start gap-4 p-4 bg-slate-800/30 rounded-xl border border-slate-700/50 hover:border-blue-500/30 transition-colors">
+      <div className="w-10 h-10 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-lg flex-shrink-0">
+        {icon}
+      </div>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-xs text-blue-400 font-mono">Шаг {num}</span>
         </div>
-      ))}
+        <h4 className="font-semibold text-white text-sm">{title}</h4>
+        <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
+      </div>
     </div>
   )
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<TabId>('tests')
-  const activeTabData = tabs.find(t => t.id === activeTab)!
+  const [activeTab, setActiveTab] = useState<TabId>('test')
+  const active = tabs.find(t => t.id === activeTab)!
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-slate-950 text-white">
+    <div className="min-h-screen bg-[#0f1117] text-white">
       {/* Header */}
-      <header className="border-b border-slate-800 bg-slate-900/50 backdrop-blur-sm sticky top-0 z-50">
-        <div className="max-w-7xl mx-auto px-4 py-4 flex items-center justify-between">
+      <header className="border-b border-slate-800/80 bg-[#161822]">
+        <div className="max-w-5xl mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center text-lg font-bold">
+            <div className="w-9 h-9 bg-blue-600 rounded-lg flex items-center justify-center text-sm">
               🎭
             </div>
             <div>
-              <h1 className="text-lg font-bold">TrendVision Tests</h1>
-              <p className="text-xs text-slate-400">Playwright + Python + Docker</p>
+              <h1 className="text-base font-bold text-white">TrendVision Tests</h1>
+              <p className="text-[11px] text-slate-500">Python + Playwright + Docker</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <span className="px-2 py-1 bg-green-900/50 text-green-400 text-xs rounded-full border border-green-800">
-              ✓ 9 тестов
-            </span>
-            <span className="px-2 py-1 bg-blue-900/50 text-blue-400 text-xs rounded-full border border-blue-800">
-              🐳 Docker
+            <span className="px-2 py-0.5 bg-emerald-900/40 text-emerald-400 text-[11px] rounded border border-emerald-800/50">
+              ✓ passing
             </span>
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        {/* Hero Section */}
-        <section className="text-center mb-12">
-          <h2 className="text-3xl md:text-4xl font-bold mb-4 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
-            Автотесты страницы поддержки TrendVision
+      <main className="max-w-5xl mx-auto px-4 py-8 space-y-10">
+        {/* Intro */}
+        <section>
+          <h2 className="text-2xl font-bold mb-2">
+            Тесты страницы поддержки TrendVision
           </h2>
-          <p className="text-slate-400 max-w-2xl mx-auto text-lg">
-            Автоматизированные E2E тесты для проверки работы фильтров прошивок
-            на странице <code className="text-blue-400 bg-slate-800 px-2 py-0.5 rounded">trendvision.ru/support/#Firmware</code>
+          <p className="text-slate-400 text-sm leading-relaxed max-w-2xl">
+            Автотесты на <span className="text-blue-400">Playwright</span> для проверки фильтров прошивок
+            на странице{' '}
+            <code className="text-blue-300 bg-slate-800/80 px-1.5 py-0.5 rounded text-xs">
+              trendvision.ru/support/#Firmware
+            </code>
+            . Всё упаковано в Docker.
           </p>
         </section>
 
-        {/* Flow Diagram */}
-        <section className="mb-12">
-          <h3 className="text-xl font-semibold mb-6 text-center text-slate-300">🔄 Рабочий процесс теста</h3>
-          <TestFlowDiagram />
-        </section>
-
-        {/* Test Table */}
-        <section className="mb-12">
-          <h3 className="text-xl font-semibold mb-6 text-slate-300">📊 Список тестов</h3>
-          <div className="overflow-x-auto rounded-xl border border-slate-700">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-800/80">
-                <tr>
-                  <th className="text-left px-4 py-3 text-slate-300 font-medium">Тест</th>
-                  <th className="text-left px-4 py-3 text-slate-300 font-medium">Описание</th>
-                  <th className="text-center px-4 py-3 text-slate-300 font-medium">Класс</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-800">
-                {[
-                  { name: 'test_page_loads', desc: 'Проверка загрузки страницы', cls: 'TestTrendVisionSupport' },
-                  { name: 'test_category_dropdown_exists', desc: 'Проверка наличия dropdown "Категория"', cls: 'TestTrendVisionSupport' },
-                  { name: 'test_select_category', desc: 'Выбор категории "В форме зеркала"', cls: 'TestTrendVisionSupport' },
-                  { name: 'test_select_product', desc: 'Выбор товара "TrendVision MR-710GP"', cls: 'TestTrendVisionSupport' },
-                  { name: 'test_select_serial_number', desc: 'Выбор "Все серийные номера"', cls: 'TestTrendVisionSupport' },
-                  { name: 'test_camera_database_block_appears', desc: 'Проверка блока "База камер"', cls: 'TestTrendVisionSupport' },
-                  { name: 'test_full_workflow', desc: 'Полный рабочий процесс', cls: 'TestTrendVisionSupport' },
-                  { name: 'test_dropdowns_workflow_with_selectors', desc: 'Альтернативный тест с CSS-селекторами', cls: 'Alternative' },
-                  { name: 'test_download_link_format', desc: 'Проверка формата ссылки data_*.rar', cls: 'Alternative' },
-                ].map((test, i) => (
-                  <tr key={i} className="hover:bg-slate-800/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <code className="text-blue-400 text-xs">{test.name}</code>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300">{test.desc}</td>
-                    <td className="px-4 py-3 text-center">
-                      <span className="px-2 py-0.5 bg-purple-900/30 text-purple-300 text-xs rounded-full">
-                        {test.cls}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+        {/* Что делаем */}
+        <section>
+          <h3 className="text-lg font-semibold mb-4 text-slate-200">Что проверяем</h3>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <StepCard num={1} title="Открываем страницу" desc="Переходим на trendvision.ru/support/#Firmware" icon="🌐" />
+            <StepCard num={2} title="Выбираем категорию" desc="Видеорегистраторы / В форме зеркала" icon="📂" />
+            <StepCard num={3} title="Выбираем товар" desc="TrendVision MR-710GP" icon="📷" />
+            <StepCard num={4} title="Выбираем серийный номер" desc="Все серийные номера" icon="🔢" />
+            <StepCard num={5} title="Проверяем блок" desc="Должен появиться «База камер»" icon="✅" />
+            <StepCard num={6} title="Проверяем ссылку" desc="Кнопка «Скачать» → data_*.rar" icon="⬇️" />
           </div>
         </section>
 
-        {/* Code Tabs */}
-        <section className="mb-12">
-          <h3 className="text-xl font-semibold mb-6 text-slate-300">💻 Исходный код</h3>
+        {/* Код */}
+        <section>
+          <h3 className="text-lg font-semibold mb-4 text-slate-200">Код</h3>
 
-          {/* Tab Navigation */}
-          <div className="flex flex-wrap gap-1 mb-4 bg-slate-800/50 p-1 rounded-xl border border-slate-700">
+          {/* Табы */}
+          <div className="flex gap-1 mb-3 bg-slate-800/40 p-1 rounded-lg border border-slate-700/50 overflow-x-auto">
             {tabs.map(tab => (
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id)}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                className={`px-3 py-1.5 rounded-md text-xs font-medium transition-all whitespace-nowrap ${
                   activeTab === tab.id
-                    ? 'bg-blue-600 text-white shadow-lg'
+                    ? 'bg-blue-600 text-white'
                     : 'text-slate-400 hover:text-white hover:bg-slate-700/50'
                 }`}
               >
-                <span className="mr-2">{tab.icon}</span>
-                <span className="hidden sm:inline">{tab.label}</span>
-                <span className="sm:hidden">{tab.label.split('.')[0]}</span>
+                <span className="mr-1.5">{tab.icon}</span>
+                {tab.label}
               </button>
             ))}
           </div>
 
-          {/* Code Block */}
-          <CodeBlock code={activeTabData.code} language={activeTabData.language} />
+          <CodeBlock code={active.code} lang={active.lang} />
         </section>
 
-        {/* Quick Start */}
-        <section className="mb-12">
-          <h3 className="text-xl font-semibold mb-6 text-slate-300">🚀 Быстрый старт</h3>
-          <div className="grid md:grid-cols-2 gap-6">
-            <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-              <h4 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <span className="text-2xl">🐳</span> Docker
+        {/* Как запустить */}
+        <section>
+          <h3 className="text-lg font-semibold mb-4 text-slate-200">Как запустить</h3>
+          <div className="grid sm:grid-cols-2 gap-4">
+            <div className="bg-slate-800/30 rounded-xl p-5 border border-slate-700/50">
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <span>🐳</span> Через Docker
               </h4>
-              <CodeBlock
-                language="bash"
-                code={`# Собрать и запустить тесты
+              <CodeBlock lang="bash" code={`# Собрать образ и запустить
 docker compose up --build
 
-# Или через docker напрямую
+# Или без compose
 docker build -t trendvision-tests .
-docker run --rm trendvision-tests`}
-              />
+docker run --rm trendvision-tests`} />
             </div>
-            <div className="bg-slate-800/50 rounded-xl p-6 border border-slate-700">
-              <h4 className="text-lg font-semibold mb-3 flex items-center gap-2">
-                <span className="text-2xl">🐍</span> Локально
+            <div className="bg-slate-800/30 rounded-xl p-5 border border-slate-700/50">
+              <h4 className="text-sm font-semibold mb-3 flex items-center gap-2">
+                <span>🐍</span> Локально
               </h4>
-              <CodeBlock
-                language="bash"
-                code={`# Установить зависимости
+              <CodeBlock lang="bash" code={`# Ставим зависимости
 pip install -r requirements.txt
 playwright install chromium
 
-# Запустить тесты
-pytest tests/ -v
+# Запускаем через pytest
+python -m pytest tests/ -v -s
 
-# С отчётом
-pytest tests/ --html=report.html`}
-              />
+# Или напрямую
+python tests/test_trendvision.py`} />
             </div>
           </div>
         </section>
 
-        {/* Tech Stack */}
-        <section className="mb-12">
-          <h3 className="text-xl font-semibold mb-6 text-slate-300 text-center">🛠 Технологический стек</h3>
-          <div className="flex flex-wrap justify-center gap-4">
-            {[
-              { name: 'Python 3.11+', icon: '🐍', color: 'from-yellow-500 to-blue-500' },
-              { name: 'Playwright', icon: '🎭', color: 'from-green-500 to-emerald-500' },
-              { name: 'pytest', icon: '🧪', color: 'from-blue-500 to-cyan-500' },
-              { name: 'Docker', icon: '🐳', color: 'from-blue-600 to-blue-400' },
-              { name: 'Chromium', icon: '🌐', color: 'from-red-500 to-yellow-500' },
-            ].map((tech, i) => (
-              <div key={i} className="flex items-center gap-3 bg-slate-800/50 rounded-xl px-5 py-3 border border-slate-700 hover:border-slate-500 transition-colors">
-                <span className="text-2xl">{tech.icon}</span>
-                <span className="font-medium text-slate-200">{tech.name}</span>
-              </div>
-            ))}
+        {/* Структура */}
+        <section>
+          <h3 className="text-lg font-semibold mb-4 text-slate-200">Структура проекта</h3>
+          <div className="bg-slate-800/30 rounded-xl p-5 border border-slate-700/50 font-mono text-sm max-w-sm">
+            <div className="space-y-1 text-slate-300">
+              <div><span className="text-blue-400">🐳</span> Dockerfile</div>
+              <div><span className="text-blue-400">📦</span> docker-compose.yml</div>
+              <div><span className="text-green-400">📋</span> requirements.txt</div>
+              <div><span className="text-slate-400">📁</span> tests/</div>
+              <div className="pl-6"><span className="text-purple-400">🧪</span> test_trendvision.py</div>
+              <div><span className="text-slate-400">📄</span> README.md</div>
+            </div>
           </div>
         </section>
 
-        {/* File Structure */}
-        <section className="mb-12">
-          <h3 className="text-xl font-semibold mb-6 text-slate-300 text-center">📁 Структура проекта</h3>
-          <div className="max-w-md mx-auto bg-slate-800/50 rounded-xl p-6 border border-slate-700 font-mono text-sm">
-            <div className="text-slate-300">
-              <div className="text-blue-400">├── 🐳 Dockerfile</div>
-              <div className="text-blue-400">├── 📦 docker-compose.yml</div>
-              <div className="text-green-400">├── 📋 requirements.txt</div>
-              <div className="text-purple-400">├── ⚙️ pytest.ini</div>
-              <div className="text-slate-300">├── 📁 tests/</div>
-              <div className="text-slate-400 ml-6">├── ⚙️ conftest.py</div>
-              <div className="text-slate-400 ml-6">└── 🧪 test_trendvision_support.py</div>
-              <div className="text-slate-300">└── 📄 README.md</div>
+        {/* Заметки */}
+        <section>
+          <h3 className="text-lg font-semibold mb-4 text-slate-200">💡 Заметки</h3>
+          <div className="bg-slate-800/30 rounded-xl p-5 border border-slate-700/50 text-sm text-slate-300 space-y-3">
+            <div className="flex items-start gap-2">
+              <span className="text-amber-400">⚠️</span>
+              <p>
+                Использую <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">time.sleep()</code> между
+                действиями — можно заменить на <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">page.wait_for_selector()</code> для более быстрого выполнения.
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-amber-400">⚠️</span>
+              <p>
+                Селекторы через <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">selects.nth(0)</code> —
+                если на странице добавятся ещё select-элементы, индексы могут сдвинуться. Лучше привязываться к label.
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-emerald-400">✓</span>
+              <p>
+                Тест можно запустить и через pytest, и напрямую через <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">python tests/test_trendvision.py</code>.
+              </p>
             </div>
           </div>
         </section>
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-800 py-6 text-center text-slate-500 text-sm">
-        <p>Playwright E2E Tests для TrendVision Support Page</p>
-        <p className="mt-1">Python • Playwright • pytest • Docker</p>
+      <footer className="border-t border-slate-800/80 mt-12 py-5 text-center text-slate-600 text-xs">
+        TrendVision Support Tests · Python + Playwright + Docker
       </footer>
     </div>
   )

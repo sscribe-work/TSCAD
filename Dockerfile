@@ -1,23 +1,21 @@
-# Dockerfile для запуска Playwright тестов
-# Базовый образ с Python и Playwright
-FROM mcr.microsoft.com/playwright/python:v1.49.1-jammy
+# Dockerfile для запуска тестов Playwright
+# Используем образ с Python 3.11
+FROM python:3.11-slim
 
-# Устанавливаем рабочую директорию
+# Рабочая директория внутри контейнера
 WORKDIR /app
 
-# Копируем зависимости
+# Копируем файл с зависимостями
 COPY requirements.txt .
 
-# Устанавливаем Python зависимости
+# Ставим зависимости
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Копируем тесты и конфигурацию
+# Устанавливаем браузеры для Playwright и системные библиотеки
+RUN playwright install --with-deps chromium
+
+# Копируем тесты
 COPY tests/ tests/
-COPY pytest.ini .
 
-# Устанавливаем переменные окружения
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONDONTWRITEBYTECODE=1
-
-# Команда по умолчанию - запуск тестов
-CMD ["pytest", "tests/", "-v", "--tb=short", "--browser=chromium"]
+# Запускаем тесты
+CMD ["python", "-m", "pytest", "tests/", "-v", "-s"]

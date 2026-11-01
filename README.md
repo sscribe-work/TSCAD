@@ -1,83 +1,45 @@
-# TrendVision Support Page - Playwright Tests
+# Тесты TrendVision Support
 
-## Описание
+Тесты для страницы https://trendvision.ru/support/#Firmware
 
-Автоматизированные тесты для страницы поддержки TrendVision (https://trendvision.ru/support/#Firmware).
+## Что тестируем
 
-Тесты проверяют корректную работу фильтров прошивок:
-1. Выбор категории "Видеорегистраторы / В форме зеркала"
-2. Выбор товара "TrendVision MR-710GP"
-3. Выбор серийного номера "Все серийные номера"
-4. Проверка появления блока "База камер" с кнопкой "Скачать"
+1. Открываем страницу поддержки
+2. Выбираем в dropdown "Категория" → "Видеорегистраторы / В форме зеркала"
+3. Выбираем в dropdown "Товар" → "TrendVision MR-710GP"
+4. Выбираем в dropdown "Серийный номер" → "Все серийные номера"
+5. Проверяем что появился блок "База камер"
+6. Проверяем что есть кнопка "Скачать" со ссылкой на data_*.rar
 
-## Структура проекта
+## Как запустить
 
-```
-├── Dockerfile              # Docker образ для запуска тестов
-├── docker-compose.yml      # Docker Compose конфигурация
-├── requirements.txt        # Python зависимости
-├── pytest.ini              # Конфигурация pytest
-├── tests/
-│   ├── conftest.py         # Фикстуры и конфигурация pytest
-│   └── test_trendvision_support.py  # Тесты
-└── README.md               # Документация
-```
-
-## Быстрый старт
-
-### Запуск через Docker (рекомендуется)
+### Через Docker
 
 ```bash
-# Собрать и запустить тесты
 docker compose up --build
-
-# Запустить в headed режиме (для отладки, нужен X11)
-docker compose --profile headed up --build
 ```
 
-### Локальный запуск
+### Локально
 
 ```bash
-# Установить зависимости
 pip install -r requirements.txt
-
-# Установить браузеры Playwright
 playwright install chromium
-
-# Запустить тесты
-pytest tests/ -v
-
-# Запустить конкретный тест
-pytest tests/test_trendvision_support.py::TestTrendVisionSupport::test_full_workflow -v
+python -m pytest tests/ -v -s
 ```
 
-### Опции запуска
+Или просто:
 
 ```bash
-# Headed режим
-pytest tests/ --headed
-
-# Замедление для отладки
-pytest tests/ --headed --slow-mo=500
-
-# Выбор браузера
-pytest tests/ --browser-name=firefox
-pytest tests/ --browser-name=webkit
-
-# Генерация HTML отчёта
-pytest tests/ --html=reports/report.html --self-contained-html
+python tests/test_trendvision.py
 ```
 
-## Тесты
+## Структура
 
-| Тест | Описание |
-|------|----------|
-| `test_page_loads` | Проверка загрузки страницы |
-| `test_category_dropdown_exists` | Проверка наличия dropdown "Категория" |
-| `test_select_category` | Выбор категории |
-| `test_select_product` | Выбор товара |
-| `test_select_serial_number` | Выбор серийного номера |
-| `test_camera_database_block_appears` | Проверка блока "База камер" |
-| `test_full_workflow` | Полный рабочий процесс |
-| `test_dropdowns_workflow_with_selectors` | Альтернативный тест с CSS-селекторами |
-| `test_download_link_format` | Проверка формата ссылки скачивания |
+```
+├── Dockerfile
+├── docker-compose.yml
+├── requirements.txt
+├── tests/
+│   └── test_trendvision.py
+└── README.md
+```
