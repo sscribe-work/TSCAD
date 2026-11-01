@@ -9,9 +9,8 @@ const testCode = `"""
 - В этом блоке должна быть кнопка "Скачать" со ссылкой на .rar архив
 """
 
-import time
 import re
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 
 # URL страницы
@@ -35,70 +34,77 @@ def test_firmware_filters():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        # Открываем страницу
+        # Открываем страницу и ждём пока загрузится
         page.goto(URL)
         page.wait_for_load_state("networkidle")
-        time.sleep(2)  # ждём пока подгрузятся все скрипты
+
+        # Ждём пока на странице появится хотя бы один select (dropdown)
+        page.wait_for_selector("select", timeout=15000)
 
         # ==========================================
         # ШАГ 1: Выбираем категорию
         # ==========================================
-        # Находим первый dropdown с названием "Категория"
-        # На сайте это select элементы, берём первый
+        # На сайте это обычные select элементы, берём первый
         selects = page.locator("select")
         category_select = selects.nth(0)
+
+        # Проверяем что первый select вообще виден
+        expect(category_select).to_be_visible(timeout=5000)
 
         # Выбираем нужную опцию по тексту
         category_select.select_option(
             label="Видеорегистраторы / В форме зеркала"
         )
-        time.sleep(1)  # ждём пока обновится следующий dropdown
+
+        # Ждём пока обновится второй dropdown (товар) —
+        # он должен стать видимым/доступным после выбора категории
+        product_select = selects.nth(1)
+        expect(product_select).to_be_enabled(timeout=5000)
 
         # ==========================================
         # ШАГ 2: Выбираем товар
         # ==========================================
-        # Второй dropdown — "Товар"
-        product_select = selects.nth(1)
         product_select.select_option(label="TrendVision MR-710GP")
-        time.sleep(1)
+
+        # Ждём пока обновится третий dropdown (серийный номер)
+        serial_select = selects.nth(2)
+        expect(serial_select).to_be_enabled(timeout=5000)
 
         # ==========================================
         # ШАГ 3: Выбираем серийный номер
         # ==========================================
-        # Третий dropdown — "Серийный номер"
-        serial_select = selects.nth(2)
         serial_select.select_option(label="Все серийные номера")
-        time.sleep(1)
 
         # ==========================================
         # ШАГ 4: Проверяем блок "База камер"
         # ==========================================
-        camera_block = page.locator("text=База камер")
-        assert camera_block.is_visible(timeout=10000), \\
-            "Блок 'База камер' не появился!"
+        # После выбора всех трёх dropdown должен появиться блок
+        camera_block = page.locator("text=База камер").first
+        expect(camera_block).to_be_visible(timeout=10000)
 
         # ==========================================
         # ШАГ 5: Проверяем кнопку "Скачать"
         # ==========================================
+        # Ищем ссылку "Скачать" — она должна вести на .rar файл
         download_link = page.locator("a", has_text="Скачать").first
-        assert download_link.is_visible(timeout=10000), \\
-            "Кнопка 'Скачать' не найдена!"
+        expect(download_link).to_be_visible(timeout=5000)
 
-        # Проверяем формат ссылки
+        # Проверяем что у ссылки есть href
         href = download_link.get_attribute("href")
-        assert href is not None, "У ссылки нет href!"
+        assert href is not None, "У ссылки 'Скачать' нет атрибута href!"
 
-        # Ссылка вида https://trendvision.ru/uploads/data_*.rar
+        # Ссылка должна быть вида https://trendvision.ru/uploads/data_*.rar
         pattern = r"https?://trendvision\\.ru/uploads/data_.*\\.rar"
         assert re.match(pattern, href), \\
-            f"Ссылка не подходит: {href}"
+            f"Ссылка не соответствует паттерну data_*.rar: {href}"
 
-        print(f"✓ Тест пройден! Ссылка: {href}")
+        print(f"✓ Тест пройден! Ссылка для скачивания: {href}")
+
         browser.close()
 
 
 def test_page_opens():
-    """Простой тест — проверяем что страница открывается."""
+    """Простой тест — проверяем что страница вообще открывается."""
 
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=True)
@@ -107,14 +113,15 @@ def test_page_opens():
         page.goto(URL)
         page.wait_for_load_state("networkidle")
 
-        title = page.title()
-        assert len(title) > 0, "Страница не загрузилась!"
+        # Проверяем что title не пустой
+        expect(page).to_have_title(re.compile(r".+"), timeout=10000)
 
-        print(f"✓ Страница открылась, title: {title}")
+        print(f"✓ Страница открылась, title: {page.title()}")
         browser.close()
 
 
 if __name__ == "__main__":
+    # Можно запустить напрямую: python tests/test_trendvision.py
     print("Запуск тестов...")
     print("-" * 50)
 
@@ -249,9 +256,7 @@ function ColorLine({ line, lang }: { line: string; lang: string }) {
 
   // Python — простая подсветка
   if (lang === 'python') {
-    // Строки в кавычках
-    const parts: { text: string; type: 'string' | 'keyword' | 'normal' }[] = []
-    let remaining = line
+    const parts: { text: string; type: 'string' | 'normal' }[] = []
     const regex = /("""[\s\S]*?"""|"[^"]*"|'[^']*')/g
     let lastIdx = 0
     let match
@@ -304,7 +309,7 @@ function ColorLine({ line, lang }: { line: string; lang: string }) {
   return <span>{line}</span>
 }
 
-function StepCard({ num, title, desc, icon }: { num: number; title: string; desc: string; icon: string }) {
+function StepCard({ num, title, desc, icon, wait }: { num: number; title: string; desc: string; icon: string; wait?: string }) {
   return (
     <div className="flex items-start gap-4 p-4 bg-slate-800/30 rounded-xl border border-slate-700/50 hover:border-blue-500/30 transition-colors">
       <div className="w-10 h-10 rounded-lg bg-blue-600/20 border border-blue-500/30 flex items-center justify-center text-lg flex-shrink-0">
@@ -313,6 +318,11 @@ function StepCard({ num, title, desc, icon }: { num: number; title: string; desc
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-2 mb-1">
           <span className="text-xs text-blue-400 font-mono">Шаг {num}</span>
+          {wait && (
+            <span className="text-[10px] px-1.5 py-0.5 bg-emerald-900/30 text-emerald-400 rounded border border-emerald-800/30">
+              ⏱ {wait}
+            </span>
+          )}
         </div>
         <h4 className="font-semibold text-white text-sm">{title}</h4>
         <p className="text-xs text-slate-400 mt-0.5">{desc}</p>
@@ -359,7 +369,7 @@ export default function App() {
             <code className="text-blue-300 bg-slate-800/80 px-1.5 py-0.5 rounded text-xs">
               trendvision.ru/support/#Firmware
             </code>
-            . Всё упаковано в Docker.
+            . Всё упаковано в Docker. Используются умные ожидания вместо <code className="text-slate-300 bg-slate-800/80 px-1.5 py-0.5 rounded text-xs">time.sleep()</code>.
           </p>
         </section>
 
@@ -367,12 +377,45 @@ export default function App() {
         <section>
           <h3 className="text-lg font-semibold mb-4 text-slate-200">Что проверяем</h3>
           <div className="grid sm:grid-cols-2 gap-3">
-            <StepCard num={1} title="Открываем страницу" desc="Переходим на trendvision.ru/support/#Firmware" icon="🌐" />
-            <StepCard num={2} title="Выбираем категорию" desc="Видеорегистраторы / В форме зеркала" icon="📂" />
-            <StepCard num={3} title="Выбираем товар" desc="TrendVision MR-710GP" icon="📷" />
-            <StepCard num={4} title="Выбираем серийный номер" desc="Все серийные номера" icon="🔢" />
-            <StepCard num={5} title="Проверяем блок" desc="Должен появиться «База камер»" icon="✅" />
-            <StepCard num={6} title="Проверяем ссылку" desc="Кнопка «Скачать» → data_*.rar" icon="⬇️" />
+            <StepCard num={1} title="Открываем страницу" desc="Переходим на trendvision.ru/support/#Firmware" icon="🌐" wait="networkidle" />
+            <StepCard num={2} title="Выбираем категорию" desc="Видеорегистраторы / В форме зеркала" icon="📂" wait="to_be_visible" />
+            <StepCard num={3} title="Выбираем товар" desc="TrendVision MR-710GP" icon="📷" wait="to_be_enabled" />
+            <StepCard num={4} title="Выбираем серийный номер" desc="Все серийные номера" icon="🔢" wait="to_be_enabled" />
+            <StepCard num={5} title="Проверяем блок" desc="Должен появиться «База камер»" icon="✅" wait="to_be_visible" />
+            <StepCard num={6} title="Проверяем ссылку" desc="Кнопка «Скачать» → data_*.rar" icon="⬇️" wait="to_be_visible" />
+          </div>
+        </section>
+
+        {/* Что изменилось */}
+        <section>
+          <h3 className="text-lg font-semibold mb-4 text-slate-200">🔄 Что изменилось: time.sleep → умные ожидания</h3>
+          <div className="overflow-x-auto rounded-xl border border-slate-700/50">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-800/60">
+                <tr>
+                  <th className="text-left px-4 py-3 text-slate-400 font-medium">Было ❌</th>
+                  <th className="text-left px-4 py-3 text-slate-400 font-medium">Стало ✅</th>
+                  <th className="text-left px-4 py-3 text-slate-400 font-medium">Зачем</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-800/60">
+                <tr>
+                  <td className="px-4 py-3 font-mono text-xs text-red-300/80">time.sleep(2)</td>
+                  <td className="px-4 py-3 font-mono text-xs text-emerald-300/80">page.wait_for_selector("select")</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">Ждём пока реально появится dropdown, а не тупо 2 секунды</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-mono text-xs text-red-300/80">time.sleep(1)</td>
+                  <td className="px-4 py-3 font-mono text-xs text-emerald-300/80">expect(select).to_be_enabled()</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">Ждём пока следующий dropdown станет активным после выбора</td>
+                </tr>
+                <tr>
+                  <td className="px-4 py-3 font-mono text-xs text-red-300/80">assert ... is_visible()</td>
+                  <td className="px-4 py-3 font-mono text-xs text-emerald-300/80">expect(...).to_be_visible(timeout=10000)</td>
+                  <td className="px-4 py-3 text-slate-400 text-xs">Playwright сам будет ждать до 10 сек, а не падает сразу</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </section>
 
@@ -453,17 +496,24 @@ python tests/test_trendvision.py`} />
           <h3 className="text-lg font-semibold mb-4 text-slate-200">💡 Заметки</h3>
           <div className="bg-slate-800/30 rounded-xl p-5 border border-slate-700/50 text-sm text-slate-300 space-y-3">
             <div className="flex items-start gap-2">
-              <span className="text-amber-400">⚠️</span>
+              <span className="text-emerald-400">✓</span>
               <p>
-                Использую <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">time.sleep()</code> между
-                действиями — можно заменить на <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">page.wait_for_selector()</code> для более быстрого выполнения.
+                Вместо <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">time.sleep()</code> используем{' '}
+                <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">expect(...).to_be_visible()</code> и{' '}
+                <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">page.wait_for_selector()</code> — тесты стали быстрее и стабильнее.
+              </p>
+            </div>
+            <div className="flex items-start gap-2">
+              <span className="text-emerald-400">✓</span>
+              <p>
+                <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">expect(select).to_be_enabled()</code> — ждём пока dropdown станет активным после выбора в предыдущем. Это надёжнее чем просто ждать N секунд.
               </p>
             </div>
             <div className="flex items-start gap-2">
               <span className="text-amber-400">⚠️</span>
               <p>
                 Селекторы через <code className="text-blue-300 bg-slate-800 px-1 rounded text-xs">selects.nth(0)</code> —
-                если на странице добавятся ещё select-элементы, индексы могут сдвинуться. Лучше привязываться к label.
+                если на странице добавятся ещё select-элементы, индексы могут сдвинуться. В идеале лучше привязываться к label, но пока работает.
               </p>
             </div>
             <div className="flex items-start gap-2">

@@ -7,9 +7,8 @@
 - В этом блоке должна быть кнопка "Скачать" со ссылкой на .rar архив
 """
 
-import time
 import re
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import sync_playwright, expect
 
 
 # URL страницы
@@ -20,9 +19,11 @@ def test_firmware_filters():
     """
     Основной тест:
     1. Открываем страницу поддержки
-    2. В первом dropdown "Категория" выбираем "Видеорегистраторы / В форме зеркала"
+    2. В первом dropdown "Категория" выбираем
+       "Видеорегистраторы / В форме зеркала"
     3. Во втором dropdown "Товар" выбираем "TrendVision MR-710GP"
-    4. В третьем dropdown "Серийный номер" выбираем "Все серийные номера"
+    4. В третьем dropdown "Серийный номер" выбираем
+       "Все серийные номера"
     5. Проверяем что появился блок "База камер"
     6. Проверяем что есть кнопка "Скачать" со ссылкой на data_*.rar
     """
@@ -31,56 +32,62 @@ def test_firmware_filters():
         browser = p.chromium.launch(headless=True)
         page = browser.new_page()
 
-        # Открываем страницу
+        # Открываем страницу и ждём пока загрузится
         page.goto(URL)
         page.wait_for_load_state("networkidle")
-        time.sleep(2)  # ждём пока подгрузятся все скрипты
+
+        # Ждём пока на странице появится хотя бы один select (dropdown)
+        page.wait_for_selector("select", timeout=15000)
 
         # ==========================================
         # ШАГ 1: Выбираем категорию
         # ==========================================
-        # Находим первый dropdown с названием "Категория"
-        # На сайте это select элементы, берём первый
+        # На сайте это обычные select элементы, берём первый
         selects = page.locator("select")
         category_select = selects.nth(0)
 
+        # Проверяем что первый select вообще виден
+        expect(category_select).to_be_visible(timeout=5000)
+
         # Выбираем нужную опцию по тексту
-        category_select.select_option(label="Видеорегистраторы / В форме зеркала")
-        time.sleep(1)  # ждём пока обновится следующий dropdown
+        category_select.select_option(
+            label="Видеорегистраторы / В форме зеркала"
+        )
+
+        # Ждём пока обновится второй dropdown (товар) —
+        # он должен стать видимым/доступным после выбора категории
+        product_select = selects.nth(1)
+        expect(product_select).to_be_enabled(timeout=5000)
 
         # ==========================================
         # ШАГ 2: Выбираем товар
         # ==========================================
-        # Второй dropdown — "Товар"
-        product_select = selects.nth(1)
         product_select.select_option(label="TrendVision MR-710GP")
-        time.sleep(1)  # ждём пока обновится следующий dropdown
+
+        # Ждём пока обновится третий dropdown (серийный номер)
+        serial_select = selects.nth(2)
+        expect(serial_select).to_be_enabled(timeout=5000)
 
         # ==========================================
         # ШАГ 3: Выбираем серийный номер
         # ==========================================
-        # Третий dropdown — "Серийный номер"
-        serial_select = selects.nth(2)
         serial_select.select_option(label="Все серийные номера")
-        time.sleep(1)  # ждём пока появится блок с базой камер
 
         # ==========================================
         # ШАГ 4: Проверяем блок "База камер"
         # ==========================================
         # После выбора всех трёх dropdown должен появиться блок "База камер"
-        camera_block = page.locator("text=База камер")
-        assert camera_block.is_visible(timeout=10000), \
-            "Блок 'База камер' не появился после выбора фильтров!"
+        camera_block = page.locator("text=База камер").first
+        expect(camera_block).to_be_visible(timeout=10000)
 
         # ==========================================
         # ШАГ 5: Проверяем кнопку "Скачать"
         # ==========================================
         # Ищем ссылку "Скачать" — она должна вести на .rar файл
         download_link = page.locator("a", has_text="Скачать").first
-        assert download_link.is_visible(timeout=10000), \
-            "Кнопка 'Скачать' не найдена!"
+        expect(download_link).to_be_visible(timeout=5000)
 
-        # Проверяем что ссылка имеет правильный формат
+        # Проверяем что у ссылки есть href
         href = download_link.get_attribute("href")
         assert href is not None, "У ссылки 'Скачать' нет атрибута href!"
 
@@ -104,11 +111,10 @@ def test_page_opens():
         page.goto(URL)
         page.wait_for_load_state("networkidle")
 
-        # Проверяем что страница загрузилась
-        title = page.title()
-        assert len(title) > 0, "Страница не загрузилась, title пустой!"
+        # Проверяем что title не пустой
+        expect(page).to_have_title(re.compile(r".+"), timeout=10000)
 
-        print(f"✓ Страница открылась, title: {title}")
+        print(f"✓ Страница открылась, title: {page.title()}")
         browser.close()
 
 
