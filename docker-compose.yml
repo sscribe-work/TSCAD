@@ -1,0 +1,9 @@
+version: "3.8"
+
+services:
+  tests:
+    build: .
+    container_name: trendvision-tests
+    volumes:
+      - ./reports:/app/reports
+    command: python -m pytest tests/ -v -s
